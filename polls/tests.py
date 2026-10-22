@@ -123,3 +123,57 @@ class QuestionDetailViewTests(TestCase):
         url = reverse('polls:detail', args=(past_question.id,))
         response = self.client.get(url)
         self.assertContains(response, past_question.question_text)
+
+class AssignmentTests(TestCase):
+     
+    def test_empty_index(self):
+        """
+        Question が0件の状態で polls:index が HTTP 200 を返し、一覧が空である。
+        """
+        self.assertEqual(Question.objects.count(), 0)
+        response = self.client.get(reverse('polls:index'))
+        self.assertEqual(response.status_code, 200)
+        self.assertQuerySetEqual(response.context['latest_question_list'], [])
+        
+        
+    def test_future_question_is_not_recent(self):
+        """
+        未来の日付の Question について was_published_recently() が偽になり、
+        一覧にも表示されない。
+        """
+        future_question = create_question(question_text="Future question.", days=30)
+        self.assertIs(future_question.was_published_recently(), False)
+
+        response = self.client.get(reverse('polls:index'))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(future_question, response.context['latest_question_list'])
+        self.assertNotContains(response, future_question.question_text)
+
+    def test_vote_increments_selected_choice(self):
+        """
+        有効な選択肢を POST すると、その選択肢の票だけが1増え、
+        結果ページへ redirect する。
+        """
+        question = create_question(question_text="Vote question.", days=-1)
+        selected = question.choice_set.create(choice_text="Selected", votes=0)
+        other = question.choice_set.create(choice_text="Other", votes=0)
+
+    def test_vote_with_missing_choice_does_not_increment(self):
+        """
+        選択肢を送らない POST でサーバーエラーにならず、どの票数も変化しない。
+        """
+        question = create_question(question_text="Vote question.", days=-1)
+        choice1 = question.choice_set.create(choice_text="Choice 1", votes=0)
+        choice2 = question.choice_set.create(choice_text="Choice 2", votes=3)
+
+        response = self.client.post(reverse('polls:vote', args=(question.id,)), {})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "You didn&#x27;t select a choice.")
+        choice1.refresh_from_db()
+        choice2.refresh_from_db()
+        self.assertEqual(choice1.votes, 0)
+        self.assertEqual(choice2.votes, 3)
+
+
+    
